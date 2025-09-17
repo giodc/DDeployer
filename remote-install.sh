@@ -19,6 +19,7 @@ TEMP_DIR="/tmp/ddeployer-install"
 ADMIN_PORT="8080"
 LOCAL_MODE=false
 PRODUCTION_MODE=false
+SKIP_CONFIRMATION=false
 
 # Print colored output
 print_status() {
@@ -57,6 +58,10 @@ parse_args() {
                 REPO_URL="$2"
                 shift 2
                 ;;
+            -y|--yes|--confirm)
+                SKIP_CONFIRMATION=true
+                shift
+                ;;
             -h|--help)
                 show_help
                 exit 0
@@ -87,6 +92,7 @@ Options:
     --production    Install for production use
     --admin-port    Set admin panel port (default: 8080)
     --repo          Set repository URL (default: https://github.com/giodc/ddeployer.git)
+    -y, --yes       Skip confirmation prompt (auto-confirm)
     -h, --help      Show this help message
 
 Examples:
@@ -95,6 +101,9 @@ Examples:
     
     # Production setup
     curl -sSL https://raw.githubusercontent.com/giodc/ddeployer/main/remote-install.sh | bash -s -- --production
+    
+    # Auto-confirm installation
+    curl -sSL https://raw.githubusercontent.com/giodc/ddeployer/main/remote-install.sh | bash -s -- --production --yes
     
     # Custom port
     curl -sSL https://raw.githubusercontent.com/giodc/ddeployer/main/remote-install.sh | bash -s -- --production --admin-port 9000
@@ -267,6 +276,60 @@ show_completion() {
     echo
 }
 
+# Confirm installation
+confirm_installation() {
+    echo "========================================"
+    echo "  DDeployer Installation Configuration"
+    echo "========================================"
+    echo
+    print_status "Installation Mode: $(if [[ "$LOCAL_MODE" == "true" ]]; then echo "Local Development"; else echo "Production Server"; fi)"
+    print_status "Admin Port: $ADMIN_PORT"
+    print_status "Repository: $REPO_URL"
+    print_status "Install Directory: $INSTALL_DIR"
+    echo
+    
+    # Skip confirmation if requested
+    if [[ "$SKIP_CONFIRMATION" == "true" ]]; then
+        print_success "Confirmation skipped. Proceeding with installation..."
+        echo
+        return 0
+    fi
+    
+    # Check if running in non-interactive mode (piped input)
+    if [[ ! -t 0 ]]; then
+        print_warning "Running in non-interactive mode. Auto-proceeding with installation..."
+        echo "To skip this prompt, use: curl -sSL ... | bash -s -- --yes"
+        sleep 3
+        return 0
+    fi
+    
+    # Interactive confirmation
+    while true; do
+        echo -n -e "${YELLOW}Would you like to proceed with the installation? [Y/n]: ${NC}"
+        read -r response
+        
+        # Default to yes if empty response
+        if [[ -z "$response" ]]; then
+            response="y"
+        fi
+        
+        case $response in
+            [Yy]|[Yy][Ee][Ss])
+                print_success "Installation confirmed. Proceeding..."
+                echo
+                return 0
+                ;;
+            [Nn]|[Nn][Oo])
+                print_status "Installation cancelled by user."
+                exit 0
+                ;;
+            *)
+                print_warning "Please answer yes (y) or no (n)."
+                ;;
+        esac
+    done
+}
+
 # Main installation function
 main() {
     echo "========================================"
@@ -276,6 +339,7 @@ main() {
     
     parse_args "$@"
     check_root
+    confirm_installation
     check_requirements
     download_ddeployer
     install_ddeployer

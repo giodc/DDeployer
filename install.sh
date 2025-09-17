@@ -125,9 +125,18 @@ check_requirements() {
     fi
     
     # Check available ports
-    if netstat -tuln | grep -q ":$ADMIN_PORT "; then
-        print_error "Port $ADMIN_PORT is already in use. Please choose a different port with --admin-port"
-        exit 1
+    if command -v netstat &> /dev/null; then
+        if netstat -tuln | grep -q ":$ADMIN_PORT "; then
+            print_error "Port $ADMIN_PORT is already in use. Please choose a different port with --admin-port"
+            exit 1
+        fi
+    elif command -v ss &> /dev/null; then
+        if ss -tuln | grep -q ":$ADMIN_PORT "; then
+            print_error "Port $ADMIN_PORT is already in use. Please choose a different port with --admin-port"
+            exit 1
+        fi
+    else
+        print_warning "Cannot check port availability (netstat/ss not found). Proceeding anyway..."
     fi
 }
 
@@ -135,7 +144,7 @@ check_requirements() {
 create_install_dir() {
     print_status "Creating installation directory: $INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
-    cd "$INSTALL_DIR"
+    # Don't change directory here - we need to stay in the source directory
 }
 
 # Copy application files
@@ -180,6 +189,9 @@ generate_env() {
     REDIS_PASSWORD=$(openssl rand -base64 32)
     APP_KEY="base64:$(openssl rand -base64 32)"
     
+    # Change to install directory to create .env file
+    cd "$INSTALL_DIR"
+    
     cat > .env << EOF
 # DDeployer Configuration
 COMPOSE_PROJECT_NAME=ddeployer
@@ -219,6 +231,9 @@ EOF
 # Start services
 start_services() {
     print_status "Starting DDeployer services..."
+    
+    # Change to install directory to run docker-compose
+    cd "$INSTALL_DIR"
     
     docker-compose up -d
     
