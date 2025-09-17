@@ -142,11 +142,31 @@ create_install_dir() {
 copy_files() {
     print_status "Copying application files..."
     
-    # If running from source directory, copy files
-    if [[ -f "$(dirname "$0")/docker-compose.yml" ]]; then
-        cp -r "$(dirname "$0")"/* "$INSTALL_DIR/"
+    # Get the script directory
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Check if we're in the DDeployer directory
+    if [[ -f "$SCRIPT_DIR/docker-compose.yml" ]]; then
+        print_status "Found application files in: $SCRIPT_DIR"
+        cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR/"
+        # Exclude the installer script from the copy
+        rm -f "$INSTALL_DIR/install.sh"
+    elif [[ -f "./docker-compose.yml" ]]; then
+        print_status "Found application files in current directory"
+        cp -r ./* "$INSTALL_DIR/"
+        # Exclude the installer script from the copy
+        rm -f "$INSTALL_DIR/install.sh"
     else
-        print_error "Application files not found. Please run from the DDeployer directory."
+        print_error "Application files not found. Please ensure you're running this script from the DDeployer directory."
+        print_error "Expected files: docker-compose.yml, admin/, templates/, config/"
+        print_status "Current directory: $(pwd)"
+        print_status "Script directory: $SCRIPT_DIR"
+        print_status "Looking for: docker-compose.yml"
+        
+        # List files in current directory for debugging
+        print_status "Files in current directory:"
+        ls -la
+        
         exit 1
     fi
 }

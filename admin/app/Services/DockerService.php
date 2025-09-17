@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Site;
+use App\Services\TemplateService;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
@@ -24,12 +25,11 @@ class DockerService
     public function createSite(Site $site): bool
     {
         try {
-            // Create site directory
-            $siteDir = $this->sitesPath . '/' . $site->container_name;
-            File::makeDirectory($siteDir, 0755, true);
-
-            // Generate docker-compose.yml for the site
-            $this->generateDockerCompose($site);
+            // Use TemplateService to generate site files
+            $templateService = app(TemplateService::class);
+            if (!$templateService->generateSiteFiles($site)) {
+                throw new \Exception("Failed to generate site files from template");
+            }
 
             // Create database if needed
             if ($site->database_name) {

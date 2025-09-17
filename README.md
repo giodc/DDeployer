@@ -19,15 +19,26 @@ A high-performance Docker-based web hosting platform with automatic SSL, caching
 
 ## Quick Installation
 
-```bash
-# Clone and run installer
-curl -sSL https://raw.githubusercontent.com/your-repo/ddeployer/main/install.sh | bash
+### Remote Installation (Recommended)
 
-# Or manual installation
-git clone <repository>
-cd DDeployer
+```bash
+# Local development setup
+curl -sSL https://raw.githubusercontent.com/giodc/ddeployer/main/remote-install.sh | sudo bash
+
+# Production setup
+curl -sSL https://raw.githubusercontent.com/giodc/ddeployer/main/remote-install.sh | sudo bash -s -- --production
+
+# Custom port
+curl -sSL https://raw.githubusercontent.com/giodc/ddeployer/main/remote-install.sh | sudo bash -s -- --production --admin-port 9000
+```
+
+### Manual Installation
+
+```bash
+git clone https://github.com/giodc/ddeployer.git
+cd ddeployer
 chmod +x install.sh
-./install.sh
+sudo ./install.sh --local
 ```
 
 ## Architecture
