@@ -71,6 +71,21 @@ fix_permissions() {
     docker-compose exec -T admin chmod -R 775 bootstrap/cache storage
     docker-compose exec -T admin chown -R www-data:www-data bootstrap/cache storage
     
+    # Check if Laravel .env file exists
+    print_status "Checking Laravel .env file..."
+    if ! docker-compose exec -T admin test -f .env; then
+        print_status "Creating Laravel .env file from .env.example..."
+        docker-compose exec -T admin cp .env.example .env
+        
+        # Generate a new APP_KEY if missing
+        if ! docker-compose exec -T admin grep -q "APP_KEY=base64:" .env; then
+            print_status "Generating Laravel application key..."
+            docker-compose exec -T admin php artisan key:generate --force
+        fi
+    else
+        print_success "Laravel .env file exists"
+    fi
+    
     # Install Laravel UI package if missing
     print_status "Checking Laravel UI package..."
     if ! docker-compose exec -T admin composer show laravel/ui > /dev/null 2>&1; then

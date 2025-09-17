@@ -192,6 +192,7 @@ generate_env() {
     # Change to install directory to create .env file
     cd "$INSTALL_DIR"
     
+    # Create Docker Compose .env file
     cat > .env << EOF
 # DDeployer Configuration
 COMPOSE_PROJECT_NAME=ddeployer
@@ -223,6 +224,56 @@ TRAEFIK_API=true
 # Mode Configuration
 LOCAL_MODE=$LOCAL_MODE
 PRODUCTION_MODE=$PRODUCTION_MODE
+EOF
+
+    # Create Laravel .env file in admin directory
+    print_status "Creating Laravel environment file..."
+    cat > admin/.env << EOF
+APP_NAME="DDeployer Admin"
+APP_ENV=production
+APP_KEY=$APP_KEY
+APP_DEBUG=false
+APP_URL=http://localhost:$ADMIN_PORT
+
+LOG_CHANNEL=stack
+LOG_DEPRECATIONS_CHANNEL=null
+LOG_LEVEL=error
+
+DB_CONNECTION=mysql
+DB_HOST=mariadb
+DB_PORT=3306
+DB_DATABASE=ddeployer
+DB_USERNAME=ddeployer
+DB_PASSWORD=$DB_PASSWORD
+
+BROADCAST_DRIVER=log
+CACHE_DRIVER=redis
+FILESYSTEM_DISK=local
+QUEUE_CONNECTION=redis
+SESSION_DRIVER=redis
+SESSION_LIFETIME=120
+
+REDIS_HOST=redis
+REDIS_PASSWORD=$REDIS_PASSWORD
+REDIS_PORT=6379
+
+MAIL_MAILER=smtp
+MAIL_HOST=mailpit
+MAIL_PORT=1025
+MAIL_USERNAME=null
+MAIL_PASSWORD=null
+MAIL_ENCRYPTION=null
+MAIL_FROM_ADDRESS="admin@ddeployer.local"
+MAIL_FROM_NAME="DDeployer Admin"
+
+# Docker Configuration
+DOCKER_SOCKET=/var/run/docker.sock
+SITES_PATH=/var/www/sites
+TEMPLATES_PATH=/var/www/templates
+
+# Traefik Configuration
+TRAEFIK_NETWORK=ddeployer
+DEFAULT_DOMAIN=localhost
 EOF
 
     print_success "Environment configuration generated"
@@ -261,9 +312,14 @@ start_services() {
         docker-compose exec -T admin composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs
     fi
     
-    # Generate Laravel application key
-    print_status "Generating application key..."
-    docker-compose exec -T admin php artisan key:generate --force
+    # Verify Laravel application key (skip generation since we already set it)
+    print_status "Verifying application key..."
+    if docker-compose exec -T admin php artisan config:show app.key | grep -q "base64:"; then
+        print_success "Application key is properly configured"
+    else
+        print_warning "Application key not found, generating new one..."
+        docker-compose exec -T admin php artisan key:generate --force
+    fi
     
     # Clear and cache Laravel configuration
     print_status "Optimizing Laravel configuration..."
