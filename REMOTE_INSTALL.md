@@ -133,6 +133,26 @@ sudo systemctl status docker
 sudo docker ps
 ```
 
+**Laravel Permission Issues:**
+If you encounter Laravel bootstrap/cache directory errors during installation:
+```bash
+# Run the Laravel permissions fix script
+cd /opt/ddeployer
+sudo ./fix-laravel-permissions.sh
+```
+
+Common Laravel errors and solutions:
+- `The /var/www/html/bootstrap/cache directory must be present and writable`
+- `Auth::routes() method requires laravel/ui package`
+- `Script @php artisan package:discover --ansi handling the post-autoload-dump event returned with error code 1`
+
+The fix script will:
+- Create required Laravel directories
+- Set proper permissions (775) for bootstrap/cache and storage
+- Install Laravel UI package if missing
+- Clear Laravel caches
+- Test composer install
+
 ### Manual Verification
 
 If the remote install fails, you can verify manually:

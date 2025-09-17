@@ -241,7 +241,20 @@ start_services() {
     print_status "Waiting for services to start..."
     sleep 30
     
-    # Install Composer dependencies first
+    # Ensure Laravel directories exist and have proper permissions
+    print_status "Setting up Laravel directories and permissions..."
+    docker-compose exec -T admin mkdir -p bootstrap/cache storage/logs storage/framework/cache storage/framework/sessions storage/framework/views
+    docker-compose exec -T admin chmod -R 775 bootstrap/cache storage
+    docker-compose exec -T admin chown -R www-data:www-data bootstrap/cache storage
+    
+    # Install required Laravel UI package first
+    print_status "Installing Laravel UI package..."
+    if ! docker-compose exec -T admin composer require laravel/ui --no-interaction; then
+        print_warning "Laravel UI package install failed, trying with --ignore-platform-reqs..."
+        docker-compose exec -T admin composer require laravel/ui --no-interaction --ignore-platform-reqs
+    fi
+    
+    # Install remaining Composer dependencies
     print_status "Installing PHP dependencies..."
     if ! docker-compose exec -T admin composer install --no-dev --optimize-autoloader --no-interaction; then
         print_warning "Composer install failed, trying with --ignore-platform-reqs..."
@@ -251,6 +264,13 @@ start_services() {
     # Generate Laravel application key
     print_status "Generating application key..."
     docker-compose exec -T admin php artisan key:generate --force
+    
+    # Clear and cache Laravel configuration
+    print_status "Optimizing Laravel configuration..."
+    docker-compose exec -T admin php artisan config:clear
+    docker-compose exec -T admin php artisan cache:clear
+    docker-compose exec -T admin php artisan route:clear
+    docker-compose exec -T admin php artisan view:clear
     
     # Run Laravel migrations (skip if they fail)
     print_status "Setting up database..."

@@ -27,19 +27,21 @@ WORKDIR /var/www/html
 # Copy application files
 COPY . .
 
-# Create required directories
+# Create required directories with proper permissions
 RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache
 
-# Skip Composer for now - we'll install manually
+# Skip Composer for now - we'll install manually during startup
 # RUN composer install --no-dev --optimize-autoloader --no-interaction
 
 # Create a simple index.php for testing
 RUN echo '<?php phpinfo(); ?>' > public/test.php
 
-# Set permissions
+# Set proper permissions for Laravel directories
 RUN chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html/storage \
-    && chmod -R 755 /var/www/html/bootstrap/cache
+    && chmod -R 775 /var/www/html/storage \
+    && chmod -R 775 /var/www/html/bootstrap/cache \
+    && chown -R www-data:www-data /var/www/html/storage \
+    && chown -R www-data:www-data /var/www/html/bootstrap/cache
 
 # Create supervisor configuration
 RUN mkdir -p /var/log/supervisor
