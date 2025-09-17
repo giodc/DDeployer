@@ -1,0 +1,133 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {{CONTAINER_NAME}}
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      APP_DEBUG: false
+      APP_KEY: {{APP_KEY}}
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: {{DB_NAME}}
+      DB_USERNAME: {{DB_USER}}
+      DB_PASSWORD: {{DB_PASSWORD}}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CACHE_DRIVER: redis
+      SESSION_DRIVER: redis
+      QUEUE_CONNECTION: redis
+    volumes:
+      - ./app:/var/www/html
+      - ./storage:/var/www/html/storage
+    depends_on:
+      - db
+      - redis
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{{CONTAINER_NAME}}.rule={{TRAEFIK_RULE}}"
+      - "traefik.http.routers.{{CONTAINER_NAME}}.entrypoints={{ENTRYPOINTS}}"
+      - "traefik.http.services.{{CONTAINER_NAME}}.loadbalancer.server.port=8000"
+      {{SSL_LABELS}}
+    networks:
+      - default
+
+  db:
+    image: mariadb:10.11
+    container_name: {{CONTAINER_NAME}}-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: {{DB_PASSWORD}}
+      MYSQL_DATABASE: {{DB_NAME}}
+      MYSQL_USER: {{DB_USER}}
+      MYSQL_PASSWORD: {{DB_PASSWORD}}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - default
+
+  redis:
+    image: redis:7-alpine
+    container_name: {{CONTAINER_NAME}}-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - default
+
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {{CONTAINER_NAME}}-queue
+    restart: unless-stopped
+    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+    environment:
+      APP_ENV: production
+      APP_DEBUG: false
+      APP_KEY: {{APP_KEY}}
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: {{DB_NAME}}
+      DB_USERNAME: {{DB_USER}}
+      DB_PASSWORD: {{DB_PASSWORD}}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CACHE_DRIVER: redis
+      SESSION_DRIVER: redis
+      QUEUE_CONNECTION: redis
+    volumes:
+      - ./app:/var/www/html
+      - ./storage:/var/www/html/storage
+    depends_on:
+      - db
+      - redis
+    networks:
+      - default
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {{CONTAINER_NAME}}-scheduler
+    restart: unless-stopped
+    command: /usr/local/bin/start-scheduler.sh
+    environment:
+      APP_ENV: production
+      APP_DEBUG: false
+      APP_KEY: {{APP_KEY}}
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: {{DB_NAME}}
+      DB_USERNAME: {{DB_USER}}
+      DB_PASSWORD: {{DB_PASSWORD}}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CACHE_DRIVER: redis
+      SESSION_DRIVER: redis
+      QUEUE_CONNECTION: redis
+    volumes:
+      - ./app:/var/www/html
+      - ./storage:/var/www/html/storage
+    depends_on:
+      - db
+      - redis
+    networks:
+      - default
+
+volumes:
+  db_data:
+  redis_data:
+
+networks:
+  default:
+    external:
+      name: ddeployer
