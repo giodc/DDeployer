@@ -1,4 +1,4 @@
-FROM dunglas/frankenphp:php8.3
+FROM php:8.2-apache
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -7,30 +7,34 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libonig-dev \
     libxml2-dev \
+    libzip-dev \
     zip \
     unzip \
     nodejs \
     npm \
     supervisor \
-    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
+    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
+# Enable Apache mod_rewrite
+RUN a2enmod rewrite
+
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy composer files
-COPY composer.json ./
-
-# Install PHP dependencies (will generate composer.lock)
-RUN composer install --no-dev --optimize-autoloader --no-interaction
-
-# Copy application code
+# Copy application files
 COPY . .
 
-# Install Node.js dependencies and build assets
-RUN npm install && npm run build
+# Create required directories
+RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache
+
+# Skip Composer for now - we'll install manually
+# RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+# Create a simple index.php for testing
+RUN echo '<?php phpinfo(); ?>' > public/test.php
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html \
