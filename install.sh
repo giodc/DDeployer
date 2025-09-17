@@ -241,10 +241,25 @@ start_services() {
     print_status "Waiting for services to start..."
     sleep 30
     
-    # Run Laravel migrations
+    # Install Composer dependencies first
+    print_status "Installing PHP dependencies..."
+    if ! docker-compose exec -T admin composer install --no-dev --optimize-autoloader --no-interaction; then
+        print_warning "Composer install failed, trying with --ignore-platform-reqs..."
+        docker-compose exec -T admin composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs
+    fi
+    
+    # Generate Laravel application key
+    print_status "Generating application key..."
+    docker-compose exec -T admin php artisan key:generate --force
+    
+    # Run Laravel migrations (skip if they fail)
     print_status "Setting up database..."
-    docker-compose exec -T admin php artisan migrate --force
-    docker-compose exec -T admin php artisan db:seed --force
+    if ! docker-compose exec -T admin php artisan migrate --force; then
+        print_warning "Database migration failed - you may need to run migrations manually"
+    fi
+    
+    # Skip seeding for now as we don't have seeders
+    # docker-compose exec -T admin php artisan db:seed --force
     
     print_success "Services started successfully"
 }
