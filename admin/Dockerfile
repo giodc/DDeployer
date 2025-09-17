@@ -22,9 +22,8 @@ WORKDIR /var/www/html
 
 # Copy composer files
 COPY composer.json ./
-COPY composer.lock ./
 
-# Install PHP dependencies
+# Install PHP dependencies (will generate composer.lock)
 RUN composer install --no-dev --optimize-autoloader --no-interaction
 
 # Copy application code
