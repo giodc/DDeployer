@@ -298,6 +298,10 @@ start_services() {
     docker-compose exec -T admin chmod -R 775 bootstrap/cache storage
     docker-compose exec -T admin chown -R www-data:www-data bootstrap/cache storage
     
+    # Wait for Apache to fully start
+    print_status "Waiting for Apache to start..."
+    sleep 10
+    
     # Install required Laravel UI package first
     print_status "Installing Laravel UI package..."
     if ! docker-compose exec -T admin composer require laravel/ui --no-interaction; then

@@ -22,8 +22,8 @@ RUN pecl install redis \
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Enable Apache mod_rewrite
-RUN a2enmod rewrite
+# Enable Apache modules
+RUN a2enmod rewrite headers
 
 # Set working directory
 WORKDIR /var/www/html
@@ -46,6 +46,10 @@ RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 775 /var/www/html/bootstrap/cache \
     && chown -R www-data:www-data /var/www/html/storage \
     && chown -R www-data:www-data /var/www/html/bootstrap/cache
+
+# Configure Apache
+COPY docker/apache.conf /etc/apache2/sites-available/ddeployer.conf
+RUN a2ensite ddeployer && a2dissite 000-default
 
 # Create supervisor configuration
 RUN mkdir -p /var/log/supervisor

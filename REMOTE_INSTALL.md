@@ -209,6 +209,45 @@ for server in "${SERVERS[@]}"; do
 done
 ```
 
+## 🔄 Updating DDeployer
+
+### Quick Update (Routine Updates)
+For minor updates and bug fixes:
+```bash
+cd /opt/ddeployer
+sudo ./quick-update.sh
+```
+
+### Full Update (Major Updates)
+For major updates that may include container changes:
+```bash
+cd /opt/ddeployer
+sudo ./update-ddeployer.sh
+```
+
+### Update Options
+```bash
+# Update to specific branch
+sudo ./update-ddeployer.sh --branch develop
+
+# Force update (ignores local changes)
+sudo ./update-ddeployer.sh --force
+
+# Create backup only
+sudo ./update-ddeployer.sh --backup-only
+
+# Update without rebuilding containers (faster)
+sudo ./update-ddeployer.sh --no-rebuild
+```
+
+### Manual Git Update
+If you prefer manual control:
+```bash
+cd /opt/ddeployer
+sudo git pull origin main
+sudo docker-compose restart
+```
+
 ## 📚 Next Steps
 
 After successful installation:
