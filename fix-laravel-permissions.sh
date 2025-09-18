@@ -109,12 +109,44 @@ fix_permissions() {
         docker-compose exec -T admin sed -i 's/QUEUE_CONNECTION=redis/QUEUE_CONNECTION=sync/' .env || true
     fi
     
-    # Clear Laravel caches
+    # Check if view.php config file exists
+    print_status "Checking Laravel view configuration..."
+    if ! docker-compose exec -T admin test -f config/view.php; then
+        print_status "Creating missing view.php configuration file..."
+        docker-compose exec -T admin bash -c 'cat > config/view.php << '\''EOF'\''
+<?php
+
+return [
+    '\''paths'\'' => [
+        resource_path('\''views'\''),
+    ],
+    '\''compiled'\'' => env(
+        '\''VIEW_COMPILED_PATH'\'',
+        realpath(storage_path('\''framework/views'\''))
+    ),
+];
+EOF'
+    else
+        print_success "Laravel view configuration exists"
+    fi
+    
+    # Clear Laravel caches (with better error handling for view cache)
     print_status "Clearing Laravel caches..."
     docker-compose exec -T admin php artisan config:clear || true
     docker-compose exec -T admin php artisan cache:clear || true
     docker-compose exec -T admin php artisan route:clear || true
-    docker-compose exec -T admin php artisan view:clear || true
+    
+    # Clear view cache with better error handling
+    print_status "Clearing view cache..."
+    if ! docker-compose exec -T admin php artisan view:clear 2>/dev/null; then
+        print_warning "View cache clear failed, this is normal if no views are cached yet"
+        # Ensure the compiled views directory exists
+        docker-compose exec -T admin mkdir -p storage/framework/views
+        docker-compose exec -T admin chmod 775 storage/framework/views
+        docker-compose exec -T admin chown www-data:www-data storage/framework/views
+    else
+        print_success "View cache cleared successfully"
+    fi
     
     # Test composer install
     print_status "Testing composer install..."

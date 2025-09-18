@@ -332,12 +332,38 @@ start_services() {
         print_warning "Redis not available, using file-based drivers"
     fi
     
+    # Ensure view.php config file exists
+    print_status "Checking Laravel view configuration..."
+    if ! docker-compose exec -T admin test -f config/view.php; then
+        print_status "Creating missing view.php configuration file..."
+        docker-compose exec -T admin bash -c 'cat > config/view.php << '\''EOF'\''
+<?php
+
+return [
+    '\''paths'\'' => [
+        resource_path('\''views'\''),
+    ],
+    '\''compiled'\'' => env(
+        '\''VIEW_COMPILED_PATH'\'',
+        realpath(storage_path('\''framework/views'\''))
+    ),
+];
+EOF'
+    fi
+    
     # Clear and cache Laravel configuration
     print_status "Optimizing Laravel configuration..."
     docker-compose exec -T admin php artisan config:clear
     docker-compose exec -T admin php artisan cache:clear
     docker-compose exec -T admin php artisan route:clear
-    docker-compose exec -T admin php artisan view:clear
+    
+    # Clear view cache with better error handling
+    if ! docker-compose exec -T admin php artisan view:clear 2>/dev/null; then
+        print_warning "View cache clear failed, ensuring view directories exist..."
+        docker-compose exec -T admin mkdir -p storage/framework/views
+        docker-compose exec -T admin chmod 775 storage/framework/views
+        docker-compose exec -T admin chown www-data:www-data storage/framework/views
+    fi
     
     # Run Laravel migrations (skip if they fail)
     print_status "Setting up database..."

@@ -147,14 +147,16 @@ Common Laravel errors and solutions:
 - `Script @php artisan package:discover --ansi handling the post-autoload-dump event returned with error code 1`
 - `Class "Redis" not found` - Redis PHP extension missing
 - `file_get_contents(/var/www/html/.env): Failed to open stream` - Missing Laravel .env file
+- `View path not found` in ViewClearCommand.php - Missing view configuration
 
 The fix script will:
 - Create required Laravel directories
 - Set proper permissions (775) for bootstrap/cache and storage
 - Install Laravel UI package if missing
 - Create Laravel .env file if missing
+- Create missing view.php configuration file
 - Test Redis connectivity and configure drivers accordingly
-- Clear Laravel caches
+- Clear Laravel caches with proper error handling
 - Test composer install
 
 ### Manual Verification
