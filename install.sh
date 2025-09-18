@@ -247,10 +247,10 @@ DB_USERNAME=ddeployer
 DB_PASSWORD=$DB_PASSWORD
 
 BROADCAST_DRIVER=log
-CACHE_DRIVER=redis
+CACHE_DRIVER=file
 FILESYSTEM_DISK=local
-QUEUE_CONNECTION=redis
-SESSION_DRIVER=redis
+QUEUE_CONNECTION=sync
+SESSION_DRIVER=file
 SESSION_LIFETIME=120
 
 REDIS_HOST=redis
@@ -319,6 +319,17 @@ start_services() {
     else
         print_warning "Application key not found, generating new one..."
         docker-compose exec -T admin php artisan key:generate --force
+    fi
+    
+    # Test Redis connectivity and configure accordingly
+    print_status "Testing Redis connectivity..."
+    if docker-compose exec -T admin php -r "try { \$redis = new Redis(); \$redis->connect('redis', 6379); echo 'Redis OK'; } catch (Exception \$e) { echo 'Redis Failed: ' . \$e->getMessage(); }"; then
+        print_status "Redis is available, enabling Redis drivers..."
+        docker-compose exec -T admin sed -i 's/CACHE_DRIVER=file/CACHE_DRIVER=redis/' .env
+        docker-compose exec -T admin sed -i 's/SESSION_DRIVER=file/SESSION_DRIVER=redis/' .env
+        docker-compose exec -T admin sed -i 's/QUEUE_CONNECTION=sync/QUEUE_CONNECTION=redis/' .env
+    else
+        print_warning "Redis not available, using file-based drivers"
     fi
     
     # Clear and cache Laravel configuration

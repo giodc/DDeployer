@@ -95,6 +95,20 @@ fix_permissions() {
         print_success "Laravel UI package is already installed"
     fi
     
+    # Test Redis connectivity and configure accordingly
+    print_status "Testing Redis connectivity..."
+    if docker-compose exec -T admin php -r "try { \$redis = new Redis(); \$redis->connect('redis', 6379); echo 'Redis OK'; } catch (Exception \$e) { echo 'Redis Failed: ' . \$e->getMessage(); }" 2>/dev/null | grep -q "Redis OK"; then
+        print_status "Redis is available, enabling Redis drivers..."
+        docker-compose exec -T admin sed -i 's/CACHE_DRIVER=file/CACHE_DRIVER=redis/' .env || true
+        docker-compose exec -T admin sed -i 's/SESSION_DRIVER=file/SESSION_DRIVER=redis/' .env || true
+        docker-compose exec -T admin sed -i 's/QUEUE_CONNECTION=sync/QUEUE_CONNECTION=redis/' .env || true
+    else
+        print_warning "Redis not available, ensuring file-based drivers are configured..."
+        docker-compose exec -T admin sed -i 's/CACHE_DRIVER=redis/CACHE_DRIVER=file/' .env || true
+        docker-compose exec -T admin sed -i 's/SESSION_DRIVER=redis/SESSION_DRIVER=file/' .env || true
+        docker-compose exec -T admin sed -i 's/QUEUE_CONNECTION=redis/QUEUE_CONNECTION=sync/' .env || true
+    fi
+    
     # Clear Laravel caches
     print_status "Clearing Laravel caches..."
     docker-compose exec -T admin php artisan config:clear || true
