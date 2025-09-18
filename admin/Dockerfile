@@ -51,7 +51,6 @@ RUN chown -R www-data:www-data /var/www/html \
 RUN mkdir -p /var/log/supervisor
 
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY docker/frankenphp.conf /etc/frankenphp/Caddyfile
 
 # Expose port
 EXPOSE 8000
