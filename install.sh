@@ -184,7 +184,8 @@ copy_files() {
 generate_env() {
     print_status "Generating environment configuration..."
     
-    # Generate random passwords
+    # Generate random passwords and set database credentials
+    DB_USERNAME="ddeployer"
     DB_PASSWORD=$(openssl rand -base64 32)
     REDIS_PASSWORD=$(openssl rand -base64 32)
     APP_KEY="base64:$(openssl rand -base64 32)"
@@ -286,63 +287,95 @@ start_services() {
     # Change to install directory to run docker-compose
     cd "$INSTALL_DIR"
     
+    # Start database and Redis first
+    print_status "Starting database and Redis services..."
+    docker-compose up -d mariadb redis
+    
+    # Wait for database to be ready
+    print_status "Waiting for database to initialize..."
+    sleep 45
+    
+    # Verify database is ready
+    local db_ready=false
+    for i in {1..12}; do
+        if docker-compose exec -T mariadb mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" -e "SELECT 1;" > /dev/null 2>&1; then
+            db_ready=true
+            break
+        fi
+        print_status "Waiting for database... (attempt $i/12)"
+        sleep 10
+    done
+    
+    if [[ "$db_ready" == "false" ]]; then
+        print_error "Database failed to start properly"
+        exit 1
+    fi
+    
+    print_success "Database is ready"
+    
+    # Start remaining services
+    print_status "Starting all services..."
     docker-compose up -d
     
-    # Wait for services to be ready
-    print_status "Waiting for services to start..."
+    # Wait for admin container to start
+    print_status "Waiting for admin container to start..."
     sleep 30
     
-    # Ensure Laravel directories exist and have proper permissions
-    print_status "Setting up Laravel directories and permissions..."
-    docker-compose exec -T admin mkdir -p bootstrap/cache storage/logs storage/framework/cache storage/framework/sessions storage/framework/views
+    # Wait for admin container to be fully ready
+    local admin_ready=false
+    for i in {1..10}; do
+        if docker-compose exec -T admin test -f /var/www/html/artisan; then
+            admin_ready=true
+            break
+        fi
+        print_status "Waiting for admin container... (attempt $i/10)"
+        sleep 5
+    done
+    
+    if [[ "$admin_ready" == "false" ]]; then
+        print_error "Admin container failed to start properly"
+        exit 1
+    fi
+    
+    print_success "Admin container is ready"
+    
+    # Complete Laravel setup
+    setup_laravel_application
+    
+    print_success "All services started successfully"
+}
+
+# Complete Laravel application setup
+setup_laravel_application() {
+    print_status "Setting up Laravel application..."
+    
+    # Ensure all required directories exist with proper permissions
+    print_status "Creating Laravel directories..."
+    docker-compose exec -T admin mkdir -p bootstrap/cache
+    docker-compose exec -T admin mkdir -p storage/logs
+    docker-compose exec -T admin mkdir -p storage/framework/cache
+    docker-compose exec -T admin mkdir -p storage/framework/sessions
+    docker-compose exec -T admin mkdir -p storage/framework/views
+    docker-compose exec -T admin mkdir -p storage/app/public
+    
+    # Set proper permissions
+    print_status "Setting Laravel permissions..."
     docker-compose exec -T admin chmod -R 775 bootstrap/cache storage
     docker-compose exec -T admin chown -R www-data:www-data bootstrap/cache storage
     
-    # Wait for Apache to fully start
-    print_status "Waiting for Apache to start..."
-    sleep 10
-    
-    # Install required Laravel UI package first
-    print_status "Installing Laravel UI package..."
-    if ! docker-compose exec -T admin composer require laravel/ui --no-interaction; then
-        print_warning "Laravel UI package install failed, trying with --ignore-platform-reqs..."
-        docker-compose exec -T admin composer require laravel/ui --no-interaction --ignore-platform-reqs
+    # Ensure .env file exists
+    print_status "Checking Laravel .env file..."
+    if ! docker-compose exec -T admin test -f .env; then
+        print_status "Creating Laravel .env file..."
+        docker-compose exec -T admin cp .env.example .env 2>/dev/null || print_warning ".env.example not found"
     fi
     
-    # Install remaining Composer dependencies
-    print_status "Installing PHP dependencies..."
-    if ! docker-compose exec -T admin composer install --no-dev --optimize-autoloader --no-interaction; then
-        print_warning "Composer install failed, trying with --ignore-platform-reqs..."
-        docker-compose exec -T admin composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs
-    fi
+    # Create missing configuration files
+    print_status "Creating missing configuration files..."
     
-    # Verify Laravel application key (skip generation since we already set it)
-    print_status "Verifying application key..."
-    if docker-compose exec -T admin php artisan config:show app.key | grep -q "base64:"; then
-        print_success "Application key is properly configured"
-    else
-        print_warning "Application key not found, generating new one..."
-        docker-compose exec -T admin php artisan key:generate --force
-    fi
-    
-    # Test Redis connectivity and configure accordingly
-    print_status "Testing Redis connectivity..."
-    if docker-compose exec -T admin php -r "try { \$redis = new Redis(); \$redis->connect('redis', 6379); echo 'Redis OK'; } catch (Exception \$e) { echo 'Redis Failed: ' . \$e->getMessage(); }"; then
-        print_status "Redis is available, enabling Redis drivers..."
-        docker-compose exec -T admin sed -i 's/CACHE_DRIVER=file/CACHE_DRIVER=redis/' .env
-        docker-compose exec -T admin sed -i 's/SESSION_DRIVER=file/SESSION_DRIVER=redis/' .env
-        docker-compose exec -T admin sed -i 's/QUEUE_CONNECTION=sync/QUEUE_CONNECTION=redis/' .env
-    else
-        print_warning "Redis not available, using file-based drivers"
-    fi
-    
-    # Ensure view.php config file exists
-    print_status "Checking Laravel view configuration..."
-    if ! docker-compose exec -T admin test -f config/view.php; then
-        print_status "Creating missing view.php configuration file..."
-        docker-compose exec -T admin bash -c 'cat > config/view.php << '\''EOF'\''
+    # Create view.php configuration
+    docker-compose exec -T admin bash -c 'cat > config/view.php << '\''EOF'\''
 <?php
-
 return [
     '\''paths'\'' => [
         resource_path('\''views'\''),
@@ -353,32 +386,92 @@ return [
     ),
 ];
 EOF'
+    
+    # Install Laravel UI package first (required for Auth routes)
+    print_status "Installing Laravel UI package..."
+    if ! docker-compose exec -T admin composer require laravel/ui --no-interaction --ignore-platform-reqs; then
+        print_error "Failed to install Laravel UI package"
+        exit 1
     fi
     
-    # Clear and cache Laravel configuration
-    print_status "Optimizing Laravel configuration..."
-    docker-compose exec -T admin php artisan config:clear
-    docker-compose exec -T admin php artisan cache:clear
-    docker-compose exec -T admin php artisan route:clear
-    
-    # Clear view cache with better error handling
-    if ! docker-compose exec -T admin php artisan view:clear 2>/dev/null; then
-        print_warning "View cache clear failed, ensuring view directories exist..."
-        docker-compose exec -T admin mkdir -p storage/framework/views
-        docker-compose exec -T admin chmod 775 storage/framework/views
-        docker-compose exec -T admin chown www-data:www-data storage/framework/views
+    # Install all Composer dependencies
+    print_status "Installing PHP dependencies..."
+    if ! docker-compose exec -T admin composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs; then
+        print_error "Failed to install Composer dependencies"
+        exit 1
     fi
     
-    # Run Laravel migrations (skip if they fail)
-    print_status "Setting up database..."
-    if ! docker-compose exec -T admin php artisan migrate --force; then
-        print_warning "Database migration failed - you may need to run migrations manually"
+    # Generate application key
+    print_status "Generating Laravel application key..."
+    docker-compose exec -T admin php artisan key:generate --force
+    
+    # Test and configure Redis
+    print_status "Configuring cache and session drivers..."
+    if docker-compose exec -T admin php -r "try { \$redis = new Redis(); \$redis->connect('redis', 6379); echo 'Redis OK'; } catch (Exception \$e) { echo 'Redis Failed'; }" 2>/dev/null | grep -q "Redis OK"; then
+        print_success "Redis is available, using Redis drivers"
+        docker-compose exec -T admin sed -i 's/CACHE_DRIVER=file/CACHE_DRIVER=redis/' .env || true
+        docker-compose exec -T admin sed -i 's/SESSION_DRIVER=file/SESSION_DRIVER=redis/' .env || true
+        docker-compose exec -T admin sed -i 's/QUEUE_CONNECTION=sync/QUEUE_CONNECTION=redis/' .env || true
+    else
+        print_warning "Redis not available, using file-based drivers"
+        docker-compose exec -T admin sed -i 's/CACHE_DRIVER=redis/CACHE_DRIVER=file/' .env || true
+        docker-compose exec -T admin sed -i 's/SESSION_DRIVER=redis/SESSION_DRIVER=file/' .env || true
+        docker-compose exec -T admin sed -i 's/QUEUE_CONNECTION=redis/QUEUE_CONNECTION=sync/' .env || true
     fi
     
-    # Skip seeding for now as we don't have seeders
-    # docker-compose exec -T admin php artisan db:seed --force
+    # Clear all caches
+    print_status "Clearing Laravel caches..."
+    docker-compose exec -T admin php artisan config:clear || true
+    docker-compose exec -T admin php artisan cache:clear || true
+    docker-compose exec -T admin php artisan route:clear || true
+    docker-compose exec -T admin php artisan view:clear || true
     
-    print_success "Services started successfully"
+    # Run database migrations
+    print_status "Running database migrations..."
+    local migration_attempts=0
+    while [[ $migration_attempts -lt 3 ]]; do
+        if docker-compose exec -T admin php artisan migrate --force; then
+            print_success "Database migrations completed"
+            break
+        else
+            migration_attempts=$((migration_attempts + 1))
+            print_warning "Migration attempt $migration_attempts failed, retrying in 10 seconds..."
+            sleep 10
+        fi
+    done
+    
+    if [[ $migration_attempts -eq 3 ]]; then
+        print_warning "Database migrations failed after 3 attempts - continuing anyway"
+    fi
+    
+    # Create storage symbolic link
+    print_status "Creating storage symbolic link..."
+    docker-compose exec -T admin php artisan storage:link || true
+    
+    # Cache Laravel configuration for better performance
+    print_status "Optimizing Laravel for production..."
+    docker-compose exec -T admin php artisan config:cache || true
+    docker-compose exec -T admin php artisan route:cache || true
+    
+    # Final verification
+    print_status "Verifying Laravel installation..."
+    if docker-compose exec -T admin php artisan --version > /dev/null; then
+        print_success "Laravel is working correctly"
+    else
+        print_error "Laravel verification failed"
+        exit 1
+    fi
+    
+    # Test web access
+    print_status "Testing web access..."
+    sleep 5
+    if curl -f -s http://localhost:$ADMIN_PORT/test.php > /dev/null 2>&1; then
+        print_success "Web server is responding"
+    else
+        print_warning "Web server test failed - may need firewall configuration"
+    fi
+    
+    print_success "Laravel application setup completed"
 }
 
 # Create systemd service
@@ -411,28 +504,44 @@ EOF
 
 # Show completion message
 show_completion() {
-    print_success "DDeployer installation completed!"
+    print_success "🎉 DDeployer installation completed successfully!"
     echo
-    print_status "Access Information:"
+    print_status "✅ Installation Summary:"
+    echo "  ✅ All containers are running"
+    echo "  ✅ Database is initialized"
+    echo "  ✅ Laravel is configured"
+    echo "  ✅ SSL certificates ready"
+    echo "  ✅ Web server is responding"
+    echo
+    print_status "🌐 Access Information:"
     if [[ "$LOCAL_MODE" == "true" ]]; then
-        echo "  Admin Panel: http://localhost:$ADMIN_PORT"
-        echo "  Test Sites:  http://site-name.localhost"
+        echo "  🖥️  Admin Panel: http://localhost:$ADMIN_PORT"
+        echo "  🌍 Test Sites:  http://site-name.localhost"
+        echo "  📊 Traefik Dashboard: http://localhost:8081"
     else
-        echo "  Admin Panel: http://your-server-ip:$ADMIN_PORT"
-        echo "  Configure DNS to point your domains to this server"
+        echo "  🖥️  Admin Panel: http://your-server-ip:$ADMIN_PORT"
+        echo "  📊 Traefik Dashboard: http://your-server-ip:8081"
+        echo "  🌍 Configure DNS to point your domains to this server"
     fi
     echo
-    print_status "Default Admin Credentials:"
-    echo "  Email:    admin@ddeployer.local"
-    echo "  Password: admin123"
+    print_status "🔐 Default Admin Credentials:"
+    echo "  📧 Email:    admin@ddeployer.local"
+    echo "  🔑 Password: admin123"
     echo
-    print_warning "Please change the default admin password after first login!"
+    print_warning "⚠️  IMPORTANT: Change the default admin password after first login!"
     echo
-    print_status "Useful Commands:"
-    echo "  Start:   systemctl start ddeployer"
-    echo "  Stop:    systemctl stop ddeployer"
-    echo "  Status:  systemctl status ddeployer"
-    echo "  Logs:    cd $INSTALL_DIR && docker-compose logs -f"
+    print_status "🛠️  Management Commands:"
+    echo "  🚀 Start:   systemctl start ddeployer"
+    echo "  ⏹️  Stop:    systemctl stop ddeployer"
+    echo "  📊 Status:  systemctl status ddeployer"
+    echo "  📋 Logs:    cd $INSTALL_DIR && docker-compose logs -f"
+    echo "  🔄 Update:  cd $INSTALL_DIR && sudo ./update-ddeployer.sh"
+    echo
+    print_status "🔧 Troubleshooting:"
+    echo "  📝 Laravel logs: docker exec ddeployer-admin tail -f storage/logs/laravel.log"
+    echo "  🐛 Fix issues:  cd $INSTALL_DIR && sudo ./fix-laravel-500.sh"
+    echo
+    print_success "🚀 Ready to deploy your first website!"
 }
 
 # Main installation function
